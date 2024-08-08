@@ -40,6 +40,7 @@ import com.navercorp.pinpoint.web.vo.tree.InstancesList;
 import com.navercorp.pinpoint.web.vo.tree.SortByAgentInfo;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.PositiveOrZero;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -51,6 +52,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -65,6 +67,9 @@ public class AgentInfoController {
     private final AgentEventService agentEventService;
 
     private final SortByAgentInfo.Rules DEFAULT_SORT_BY = SortByAgentInfo.Rules.AGENT_ID_ASC;
+
+    @Value("${pinpoint.web.active.agent.check.gc:false}")
+    private Boolean defaultGcCheck;
 
     public AgentInfoController(AgentInfoService agentInfoService, AgentEventService agentEventService) {
         this.agentInfoService = Objects.requireNonNull(agentInfoService, "agentInfoService");
@@ -103,23 +108,27 @@ public class AgentInfoController {
 
     @GetMapping(value = "/getAgentList", params = {"application"})
     public TreeView<TreeNode<AgentStatusAndLink>> getAgentList(
-            @RequestParam("application") @NotBlank String applicationName
+            @RequestParam("application") @NotBlank String applicationName,
+            @RequestParam(value = "gcCheck", required = false) Optional<Boolean> optionalGcCheck
     ) {
         final long timestamp = System.currentTimeMillis();
-        return getAgentList(applicationName, timestamp);
+        return getAgentList(applicationName, timestamp, optionalGcCheck);
     }
 
     @GetMapping(value = "/getAgentList", params = {"application", "from", "to"})
     public TreeView<TreeNode<AgentStatusAndLink>> getAgentList(
             @RequestParam("application") @NotBlank String applicationName,
             @RequestParam("from") @PositiveOrZero long from,
-            @RequestParam("to") @PositiveOrZero long to) {
+            @RequestParam("to") @PositiveOrZero long to,
+            @RequestParam(value = "gcCheck", required = false) Optional<Boolean> optionalGcCheck) {
         final AgentStatusFilter currentRunFilter = AgentStatusFilters.recentRunning(from);
+        final boolean gcCheck = optionalGcCheck.orElse(defaultGcCheck);
         final AgentsMapByHost list = this.agentInfoService.getAgentsListByApplicationName(
                 currentRunFilter,
                 applicationName,
                 Range.between(from, to),
-                DEFAULT_SORT_BY
+                DEFAULT_SORT_BY,
+                gcCheck
         );
         return treeView(list);
     }
@@ -127,12 +136,15 @@ public class AgentInfoController {
     @GetMapping(value = "/getAgentList", params = {"application", "timestamp"})
     public TreeView<TreeNode<AgentStatusAndLink>> getAgentList(
             @RequestParam("application") @NotBlank String applicationName,
-            @RequestParam("timestamp") @PositiveOrZero long timestamp) {
+            @RequestParam("timestamp") @PositiveOrZero long timestamp,
+            @RequestParam(value = "gcCheck", required = false) Optional<Boolean> optionalGcCheck) {
+        final boolean gcCheck = optionalGcCheck.orElse(defaultGcCheck);
         final AgentsMapByHost list = this.agentInfoService.getAgentsListByApplicationName(
                 AgentStatusFilters.running(),
                 applicationName,
                 Range.between(timestamp, timestamp),
-                DEFAULT_SORT_BY
+                DEFAULT_SORT_BY,
+                gcCheck
         );
         return treeView(list);
     }

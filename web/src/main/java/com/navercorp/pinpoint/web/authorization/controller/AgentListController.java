@@ -30,11 +30,10 @@ import com.navercorp.pinpoint.web.vo.tree.InstancesListMap;
 import com.navercorp.pinpoint.web.vo.tree.SortByAgentInfo;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.PositiveOrZero;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.util.CollectionUtils;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -57,6 +56,9 @@ public class AgentListController {
     private final ApplicationFactory applicationFactory;
     private final ResponseTimeHistogramService responseTimeHistogramService;
     private final SortByAgentInfo.Rules DEFAULT_SORT_BY = SortByAgentInfo.Rules.AGENT_ID_ASC;
+
+    @Value("${pinpoint.web.active.agent.check.gc:false}")
+    private Boolean defaultGcCheck;
 
     public AgentListController(
             AgentInfoService agentInfoService,
@@ -103,15 +105,18 @@ public class AgentListController {
             @RequestParam("application") @NotBlank String applicationName,
             @RequestParam(value = "serviceTypeCode", required = false) Short serviceTypeCode,
             @RequestParam(value = "serviceTypeName", required = false) String serviceTypeName,
-            @RequestParam(value = "sortBy") Optional<SortByAgentInfo.Rules> sortBy) {
+            @RequestParam(value = "sortBy") Optional<SortByAgentInfo.Rules> sortBy,
+            @RequestParam(value = "gcCheck", required = false) Optional<Boolean> optionalGcCheck) {
         final SortByAgentInfo.Rules paramSortBy = sortBy.orElse(DEFAULT_SORT_BY);
         final long timestamp = System.currentTimeMillis();
+        final boolean gcCheck = optionalGcCheck.orElse(defaultGcCheck);
         final AgentsMapByHost list = this.agentInfoService.getAgentsListByApplicationName(
                 AgentStatusFilters.running(),
                 AgentInfoFilters.exactServiceType(serviceTypeCode, serviceTypeName),
                 applicationName,
                 Range.between(timestamp, timestamp),
-                paramSortBy
+                paramSortBy,
+                gcCheck
         );
         return treeView(list);
     }
@@ -123,15 +128,17 @@ public class AgentListController {
             @RequestParam(value = "serviceTypeName", required = false) String serviceTypeName,
             @RequestParam("from") @PositiveOrZero long from,
             @RequestParam("to") @PositiveOrZero long to,
-            @RequestParam(value = "sortBy") Optional<SortByAgentInfo.Rules> sortBy
-    ) {
+            @RequestParam(value = "sortBy") Optional<SortByAgentInfo.Rules> sortBy,
+            @RequestParam(value = "gcCheck", required = false) Optional<Boolean> optionalGcCheck) {
         final SortByAgentInfo.Rules paramSortBy = sortBy.orElse(DEFAULT_SORT_BY);
+        final boolean gcCheck = optionalGcCheck.orElse(defaultGcCheck);
         final AgentsMapByHost list = this.agentInfoService.getAgentsListByApplicationName(
                 AgentStatusFilters.recentRunning(from),
                 AgentInfoFilters.exactServiceType(serviceTypeCode, serviceTypeName),
                 applicationName,
                 Range.between(from, to),
-                paramSortBy
+                paramSortBy,
+                gcCheck
         );
         return treeView(list);
     }
@@ -144,12 +151,12 @@ public class AgentListController {
             @RequestParam("from") @PositiveOrZero long from,
             @RequestParam("to") @PositiveOrZero long to,
             @RequestParam(value = "sortBy") Optional<SortByAgentInfo.Rules> sortBy,
-            @RequestParam(value = "applicationPairs", required = false) ApplicationPairs applicationPairs
-    ) {
+            @RequestParam(value = "applicationPairs", required = false) ApplicationPairs applicationPairs,
+            @RequestParam(value = "gcCheck", required = false) Optional<Boolean> optionalGcCheck) {
         ServiceType serviceType = registry.findServiceType(serviceTypeCode);
         if (serviceType.isWas()) {
             return getAgentsList(
-                    applicationName, serviceTypeCode, serviceTypeName, from, to, sortBy
+                    applicationName, serviceTypeCode, serviceTypeName, from, to, sortBy, optionalGcCheck
             );
         }
 

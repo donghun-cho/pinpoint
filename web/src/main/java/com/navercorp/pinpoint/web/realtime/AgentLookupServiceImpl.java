@@ -25,6 +25,7 @@ import com.navercorp.pinpoint.web.vo.agent.AgentStatusFilters;
 import com.navercorp.pinpoint.web.vo.tree.AgentsMapByHost;
 import com.navercorp.pinpoint.web.vo.tree.InstancesList;
 import com.navercorp.pinpoint.web.vo.tree.SortByAgentInfo;
+import org.springframework.beans.factory.annotation.Value;
 
 import java.time.Duration;
 import java.util.ArrayList;
@@ -39,6 +40,9 @@ class AgentLookupServiceImpl implements AgentLookupService {
     private final AgentInfoService agentInfoService;
     private final Duration recentness;
 
+    @Value("${pinpoint.web.active.agent.check.gc:false}")
+    private Boolean defaultGcCheck;
+
     AgentLookupServiceImpl(AgentInfoService agentInfoService, Duration recentness) {
         this.agentInfoService = Objects.requireNonNull(agentInfoService, "agentInfoService");
         this.recentness = Objects.requireNonNullElse(recentness, Duration.ZERO);
@@ -52,7 +56,8 @@ class AgentLookupServiceImpl implements AgentLookupService {
                 AgentStatusFilters.recentRunning(from),
                 applicationName,
                 Range.between(from, now),
-                SortByAgentInfo.Rules.AGENT_NAME_ASC
+                SortByAgentInfo.Rules.AGENT_NAME_ASC,
+                defaultGcCheck
         ));
     }
 

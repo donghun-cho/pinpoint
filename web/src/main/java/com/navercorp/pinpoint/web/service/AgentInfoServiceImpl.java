@@ -54,6 +54,7 @@ import com.navercorp.pinpoint.web.vo.tree.ApplicationAgentHostList;
 import com.navercorp.pinpoint.web.vo.tree.SortByAgentInfo;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.util.CollectionUtils;
 
@@ -93,6 +94,9 @@ public class AgentInfoServiceImpl implements AgentInfoService {
 
     private final AgentStatDao<JvmGcBo> jvmGcDao;
     private final HyperLinkFactory hyperLinkFactory;
+
+    @Value("${pinpoint.web.active.agent.check.gc:false}")
+    private Boolean defaultGcCheck;
 
     public AgentInfoServiceImpl(AgentEventService agentEventService,
                                 AgentWarningStatService agentWarningStatService,
@@ -142,26 +146,30 @@ public class AgentInfoServiceImpl implements AgentInfoService {
         );
     }
 
+
     @Override
     public AgentsMapByHost getAgentsListByApplicationName(AgentStatusFilter agentStatusFilter,
                                                           String applicationName,
                                                           Range range,
-                                                          SortByAgentInfo.Rules sortBy) {
-        return getAgentsListByApplicationName(agentStatusFilter, AgentInfoFilters.acceptAll(), applicationName, range, sortBy);
+                                                          SortByAgentInfo.Rules sortBy,
+                                                          boolean gcCheck) {
+        return getAgentsListByApplicationName(agentStatusFilter, AgentInfoFilters.acceptAll(), applicationName, range, sortBy, gcCheck);
     }
+
 
     @Override
     public AgentsMapByHost getAgentsListByApplicationName(AgentStatusFilter agentStatusFilter,
                                                           AgentInfoFilter agentInfoPredicate,
                                                           String applicationName,
                                                           Range range,
-                                                          SortByAgentInfo.Rules sortBy) {
+                                                          SortByAgentInfo.Rules sortBy,
+                                                          boolean gcCheck) {
         Objects.requireNonNull(agentStatusFilter, "agentStatusFilter");
         Objects.requireNonNull(agentInfoPredicate, "agentInfoPredicate");
         Objects.requireNonNull(applicationName, "applicationName");
 
         Set<AgentAndStatus> agentInfoAndStatuses = getAgentsByApplicationName(applicationName, range.getTo());
-        Predicate<AgentStatus> agentStatusFilter0 = agentStatusFilter.or(x -> isActiveAgent(x.getAgentId(), range));
+        Predicate<AgentStatus> agentStatusFilter0 = agentStatusFilter.or(x -> isActiveAgent(x.getAgentId(), range, gcCheck));
 
         if (agentInfoAndStatuses.isEmpty()) {
             logger.warn("agent list is empty for application:{}", applicationName);
@@ -257,8 +265,11 @@ public class AgentInfoServiceImpl implements AgentInfoService {
         List<AgentInfo> result = new ArrayList<>();
         for (AgentInfo agentInfo : filteredAgentInfoList) {
             String agentId = agentInfo.getAgentId();
-            if (isActiveAgent2(agentId, ranges)) {
-                result.add(agentInfo);
+            for (Range range : ranges) {
+                if (isActiveAgent(agentId, range, defaultGcCheck)) {
+                    result.add(agentInfo);
+                    break;
+                }
             }
         }
         return result;
@@ -304,13 +315,13 @@ public class AgentInfoServiceImpl implements AgentInfoService {
             // FIXME This needs to be done with a more accurate information.
             // If at any time a non-java agent is introduced, or an agent that does not collect jvm data,
             // this will fail
-            boolean dataExists = isActiveAgent(agentId, fastRange);
+            boolean dataExists = isActiveAgent(agentId, fastRange, defaultGcCheck);
             if (dataExists) {
                 activeAgentIdList.add(agentId);
                 continue;
             }
 
-            dataExists = isActiveAgent(agentId, queryRange);
+            dataExists = isActiveAgent(agentId, queryRange, defaultGcCheck);
             if (dataExists) {
                 activeAgentIdList.add(agentId);
             }
@@ -464,24 +475,16 @@ public class AgentInfoServiceImpl implements AgentInfoService {
 
     @Override
     public boolean isActiveAgent(String agentId, Range range) {
-        Objects.requireNonNull(agentId, "agentId");
-        return isActiveAgentByGcStat(agentId, range) ||
-                isActiveAgentByPing(agentId, range);
+        return isActiveAgent(agentId, range, true);
     }
 
-    public boolean isActiveAgent2(String agentId, Range range) {
+    public boolean isActiveAgent(String agentId, Range range, boolean gcCheck) {
         Objects.requireNonNull(agentId, "agentId");
-        return isActiveAgentByPing(agentId, range) ||
-                isActiveAgentByGcStat(agentId, range);
-    }
-
-    private boolean isActiveAgent2(String agentId, List<Range> ranges) {
-        for (Range range : ranges) {
-            if (isActiveAgent2(agentId, range)) {
-                return true;
-            }
+        boolean isActive = isActiveAgentByPing(agentId, range);
+        if (gcCheck) {
+            return isActive || isActiveAgentByGcStat(agentId, range);
         }
-        return false;
+        return isActive;
     }
 
     private boolean isActiveAgentByGcStat(String agentId, Range range) {
