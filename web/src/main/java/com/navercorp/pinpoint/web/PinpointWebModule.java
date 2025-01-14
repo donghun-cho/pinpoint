@@ -1,6 +1,7 @@
 package com.navercorp.pinpoint.web;
 
 import com.navercorp.pinpoint.common.server.CommonsServerConfiguration;
+import com.navercorp.pinpoint.common.server.config.ServiceIdCacheConfiguration;
 import com.navercorp.pinpoint.common.server.profile.StandardEnvironmentLogger;
 import com.navercorp.pinpoint.common.server.util.time.RangeValidatorConfiguration;
 import com.navercorp.pinpoint.datasource.MainDataSourceConfiguration;
@@ -36,6 +37,7 @@ import org.springframework.core.env.StandardEnvironment;
         RealtimeConfig.class,
         MainDataSourceConfiguration.class,
 
+        ServiceIdCacheConfiguration.class,
         CacheConfiguration.class,
 
         ApplicationMapModule.class,

@@ -17,9 +17,17 @@
 package com.navercorp.pinpoint.common.util;
 
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.DataOutputStream;
+import java.io.IOException;
 import java.io.UnsupportedEncodingException;
+import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.util.Map;
+import java.util.Properties;
+import java.util.UUID;
 
 /**
  * @author emeroad
@@ -29,6 +37,7 @@ public final class BytesUtils {
     public static final int INT_BYTE_LENGTH = 4;
     public static final int LONG_BYTE_LENGTH = 8;
     public static final int LONG_LONG_BYTE_LENGTH = 16;
+    public static final int UUID_BYTE_LENGTH = 16;
 
     public static final int VLONG_MAX_SIZE = 10;
     public static final int VINT_MAX_SIZE = 5;
@@ -126,7 +135,7 @@ public final class BytesUtils {
     }
 
 
-     public static int bytesToSVar32(final byte[] buffer, final int offset) {
+    public static int bytesToSVar32(final byte[] buffer, final int offset) {
         return zigzagToInt(bytesToVar32(buffer, offset));
     }
 
@@ -141,7 +150,8 @@ public final class BytesUtils {
         // CodedInputStream.java -> int readRawVarint32()
 
         // See implementation notes for readRawVarint64
-        fastpath: {
+        fastpath:
+        {
             int pos = offset;
             final int bufferSize = buffer.length;
             if (bufferSize == pos) {
@@ -202,7 +212,8 @@ public final class BytesUtils {
         // Instead of cleaning up the sign extension bits by masking eagerly,
         // we delay until we find the final (positive) byte, when we clear all
         // accumulated bits with one xor.  We depend on javac to constant fold.
-        fastpath: {
+        fastpath:
+        {
             int pos = offset;
             int bufferSize = buffer.length;
             if (bufferSize == pos) {
@@ -245,7 +256,9 @@ public final class BytesUtils {
         return readVar64SlowPath(buffer, offset);
     }
 
-    /** Variant of readRawVarint64 for when uncomfortably close to the limit. */
+    /**
+     * Variant of readRawVarint64 for when uncomfortably close to the limit.
+     */
     /* Visible for testing */
     static long readVar64SlowPath(final byte[] buffer, int offset) {
 
@@ -257,7 +270,7 @@ public final class BytesUtils {
                 return result;
             }
         }
-        throw new ArrayIndexOutOfBoundsException("invalid varLong. start offset:" +  offset + " readOffset:" + offset);
+        throw new ArrayIndexOutOfBoundsException("invalid varLong. start offset:" + offset + " readOffset:" + offset);
     }
 
     public static short bytesToShort(final byte byte1, final byte byte2) {
@@ -318,10 +331,10 @@ public final class BytesUtils {
         checkBounds(buf, offset);
         while (true) {
             if ((value & ~0x7F) == 0) {
-                buf[offset++] = (byte)value;
+                buf[offset++] = (byte) value;
                 return offset;
             } else {
-                buf[offset++] = (byte)((value & 0x7F) | 0x80);
+                buf[offset++] = (byte) ((value & 0x7F) | 0x80);
                 value >>>= 7;
             }
         }
@@ -347,7 +360,7 @@ public final class BytesUtils {
      * https://github.com/google/protobuf/blob/master/java/src/main/java/com/google/protobuf/CodedOutputStream.java
      */
     public static int computeVar32Size(final int value) {
-        if ((value & (0xffffffff <<  7)) == 0) return 1;
+        if ((value & (0xffffffff << 7)) == 0) return 1;
         if ((value & (0xffffffff << 14)) == 0) return 2;
         if ((value & (0xffffffff << 21)) == 0) return 3;
         if ((value & (0xffffffff << 28)) == 0) return 4;
@@ -371,10 +384,10 @@ public final class BytesUtils {
 
         while (true) {
             if ((value & ~0x7FL) == 0) {
-                buf[offset++] = (byte)value;
+                buf[offset++] = (byte) value;
                 return offset;
             } else {
-                buf[offset++] = (byte)(((int)value & 0x7F) | 0x80);
+                buf[offset++] = (byte) (((int) value & 0x7F) | 0x80);
                 value >>>= 7;
             }
         }
@@ -412,7 +425,7 @@ public final class BytesUtils {
      * https://github.com/google/protobuf/blob/master/java/src/main/java/com/google/protobuf/CodedOutputStream.java
      */
     public static int computeVar64Size(final long value) {
-        if ((value & (0xffffffffffffffffL <<  7)) == 0) return 1;
+        if ((value & (0xffffffffffffffffL << 7)) == 0) return 1;
         if ((value & (0xffffffffffffffffL << 14)) == 0) return 2;
         if ((value & (0xffffffffffffffffL << 21)) == 0) return 3;
         if ((value & (0xffffffffffffffffL << 28)) == 0) return 4;
@@ -451,7 +464,7 @@ public final class BytesUtils {
         writeShort(postfix, buf, prefix.length);
         return buf;
     }
-    
+
     public static byte[] add(final byte[] prefix, final int postfix) {
         if (prefix == null) {
             throw new NullPointerException("prefix");
@@ -609,4 +622,61 @@ public final class BytesUtils {
         return index + 1;
     }
 
+    // UUID
+    public static byte[] toBytes(UUID uuid) {
+        if (uuid == null) {
+            return null;
+        }
+        final ByteBuffer buffer = ByteBuffer.allocate(UUID_BYTE_LENGTH);
+        buffer.putLong(uuid.getMostSignificantBits());
+        buffer.putLong(uuid.getLeastSignificantBits());
+        return buffer.array();
+    }
+
+    public static UUID toUUID(final byte[] bytes) {
+        if (bytes == null) {
+            return null;
+        }
+        if (bytes.length != UUID_BYTE_LENGTH) {
+            throw new IllegalArgumentException("Invalid UUID bytes length");
+        }
+        return toUUID(bytes, 0);
+    }
+
+    public static UUID toUUID(final byte[] bytes, final int offset) {
+        if (bytes == null) {
+            return null;
+        }
+        final ByteBuffer byteBuffer = ByteBuffer.wrap(bytes, offset, UUID_BYTE_LENGTH);
+        final long high = byteBuffer.getLong();
+        final long low = byteBuffer.getLong();
+        return new UUID(high, low);
+    }
+
+    // Map
+    public static byte[] toBytes(Map<String, String> map) {
+        // serialize in properties format manually due to properties.store() add #{date} at the first line
+        ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
+        try (DataOutputStream dataOutputStream = new DataOutputStream(byteArrayOutputStream)) {
+            for (Map.Entry<String, String> entry : map.entrySet()) {
+                dataOutputStream.writeBytes(entry.getKey() + "=" + entry.getValue() + "\n");
+            }
+        } catch (IOException e) {
+            throw new IllegalArgumentException("Failed to serialize map", e);
+        }
+        return byteArrayOutputStream.toByteArray();
+    }
+
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    public static Map<String, String> toMap(byte[] bytes) {
+        Properties properties = new Properties();
+
+        ByteArrayInputStream byteArrayInputStream = new ByteArrayInputStream(bytes);
+        try {
+            properties.load(byteArrayInputStream);
+        } catch (IOException e) {
+            throw new IllegalArgumentException("Failed to deserialize map", e);
+        }
+        return (Map<String, String>) (Map) properties;
+    }
 }

@@ -23,9 +23,14 @@ import org.apache.logging.log4j.Logger;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
+import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Properties;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.fail;
@@ -512,5 +517,47 @@ public class BytesUtilsTest {
         final short maxOver = (short) (Short.MAX_VALUE + 1);
         assertEquals(32768, BytesUtils.shortToUnsignedShort(maxOver));
         assertEquals(65535, BytesUtils.shortToUnsignedShort((short) -1));
+    }
+
+    @Test
+    public void UUIDConversionTest() {
+        UUID uuid = UUID.randomUUID();
+        System.out.println("input: " + uuid);
+
+        byte[] bytes = BytesUtils.toBytes(uuid);
+        System.out.println("bytes: " + Arrays.toString(bytes));
+        System.out.println("bytes toString: " + BytesUtils.toString(bytes));
+
+        UUID convertedUUID = BytesUtils.toUUID(bytes);
+        System.out.println("result: " + convertedUUID);
+
+        org.assertj.core.api.Assertions.assertThat(uuid).isEqualTo(convertedUUID);
+    }
+
+    @Test
+    public void testMapConversion() throws IOException {
+        Map<String, String> tags = new HashMap<>();
+        tags.put("key2", "value2");
+        tags.put("key1", "value1");
+
+        System.out.println("----input----");
+        System.out.println("map: " + tags);
+
+        Properties properties = new Properties();
+        properties.putAll(tags);
+        System.out.println("java properties: " + properties);
+        System.out.print("properties.store(): ");
+        properties.store(System.out, null);
+
+
+        System.out.println("----output----");
+        byte[] bytes = BytesUtils.toBytes(tags);
+        System.out.println("bytes: " + Arrays.toString(bytes));
+        System.out.println("bytes toString: " + BytesUtils.toString(bytes));
+
+        Map<String, String> convertedTags = BytesUtils.toMap(bytes);
+        System.out.println("map: " + convertedTags);
+
+        org.assertj.core.api.Assertions.assertThat(tags).isEqualTo(convertedTags);
     }
 }
