@@ -19,6 +19,7 @@ package com.navercorp.pinpoint.login.basic.service;
 import com.navercorp.pinpoint.login.basic.config.BasicLoginProperties;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
@@ -38,7 +39,7 @@ public class PinpointMemoryUserDetailsService implements UserDetailsService {
 
     private final Logger logger = LogManager.getLogger(this.getClass());
 
-    private final Map<String, UserDetails> userDetailsMap;
+    private final Map<String, UserDetails> users;
 
     public PinpointMemoryUserDetailsService(BasicLoginProperties basicLoginConfig) {
         Map<String, UserDetails> userDetailsMap = new HashMap<>();
@@ -64,12 +65,17 @@ public class PinpointMemoryUserDetailsService implements UserDetailsService {
             logger.debug("Has been registered {} that has ADMIN role.", adminRoleUserNameList);
         }
 
-        this.userDetailsMap = Map.copyOf(userDetailsMap);
+        this.users = Map.copyOf(userDetailsMap);
     }
 
     @Override
     public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
-        return userDetailsMap.get(username);
+        UserDetails user = users.get(username);
+        if (user == null) {
+            throw new UsernameNotFoundException("User not found: " + username);
+        }
+        return new User(user.getUsername(), user.getPassword(), user.isEnabled(), user.isAccountNonExpired(),
+                user.isCredentialsNonExpired(), user.isAccountNonLocked(), user.getAuthorities());
     }
 
 }
