@@ -23,6 +23,7 @@ import com.navercorp.pinpoint.user.UserModule;
 import com.navercorp.pinpoint.web.applicationmap.config.ApplicationMapModule;
 import com.navercorp.pinpoint.web.cache.CacheConfiguration;
 import com.navercorp.pinpoint.web.component.config.ComponentConfiguration;
+import com.navercorp.pinpoint.web.config.AgentListProperties;
 import com.navercorp.pinpoint.web.config.ConfigProperties;
 import com.navercorp.pinpoint.web.config.LogProperties;
 import com.navercorp.pinpoint.web.config.RangeValidatorConfiguration;
@@ -98,6 +99,11 @@ public class PinpointWebModule {
     @Bean
     public LogProperties logProperties() {
         return new LogProperties();
+    }
+
+    @Bean
+    public AgentListProperties agentListProperties() {
+        return new AgentListProperties();
     }
 
     @Bean

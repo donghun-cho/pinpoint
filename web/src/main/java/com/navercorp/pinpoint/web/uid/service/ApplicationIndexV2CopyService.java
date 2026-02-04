@@ -4,5 +4,5 @@ public interface ApplicationIndexV2CopyService {
 
     void copyApplication();
 
-    void copyAgentId();
+    void copyAgentId(int durationDays, int maxIterations, int batchSize);
 }
