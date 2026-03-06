@@ -12,7 +12,7 @@ public interface AgentIdDao {
 
     List<AgentIdEntry> getAgentIdEntry(int serviceUid, String applicationName, int serviceTypeCode, String agentId);
 
-    List<AgentIdEntry> getAgentIdEntryByInsertTimeAfter(int serviceUid, String applicationName, int serviceTypeCode, long minUpdateTimestamp);
+    List<AgentIdEntry> getAgentIdEntryByMinStatusTimestamp(int serviceUid, String applicationName, int serviceTypeCode, long minStatusTimestamp);
 
     void delete(int serviceUid, String applicationName, int serviceTypeCode, String agentId, long agentStartTime);
 

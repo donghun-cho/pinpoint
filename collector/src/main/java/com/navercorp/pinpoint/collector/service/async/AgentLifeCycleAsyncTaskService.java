@@ -19,7 +19,9 @@ package com.navercorp.pinpoint.collector.service.async;
 import com.navercorp.pinpoint.collector.applicationmap.service.LinkService;
 import com.navercorp.pinpoint.collector.config.CollectorProperties;
 import com.navercorp.pinpoint.collector.service.AgentLifeCycleService;
+import com.navercorp.pinpoint.collector.service.AgentListStatusService;
 import com.navercorp.pinpoint.common.server.bo.AgentLifeCycleBo;
+import com.navercorp.pinpoint.common.server.uid.ServiceUid;
 import com.navercorp.pinpoint.common.server.util.AgentLifeCycleState;
 import com.navercorp.pinpoint.common.trace.ServiceType;
 import com.navercorp.pinpoint.common.util.BytesUtils;
@@ -41,15 +43,18 @@ public class AgentLifeCycleAsyncTaskService {
     private final Logger logger = LogManager.getLogger(this.getClass());
 
     private final AgentLifeCycleService agentLifeCycleService;
+    private final AgentListStatusService agentListStatusService;
     private final LinkService linkService;
     private final ServiceTypeRegistryService registry;
     private final CollectorProperties collectorProperties;
 
     public AgentLifeCycleAsyncTaskService(AgentLifeCycleService agentLifeCycleService,
+                                          AgentListStatusService agentListStatusService,
                                           LinkService linkService,
                                           ServiceTypeRegistryService registry,
                                           CollectorProperties collectorProperties) {
         this.agentLifeCycleService = agentLifeCycleService;
+        this.agentListStatusService = agentListStatusService;
         this.linkService = linkService;
         this.registry = registry;
         this.collectorProperties = collectorProperties;
@@ -66,6 +71,8 @@ public class AgentLifeCycleAsyncTaskService {
         final long startTimestamp = agentProperty.getStartTime();
         final AgentLifeCycleBo agentLifeCycleBo = new AgentLifeCycleBo(agentId, startTimestamp, eventTimestamp, eventIdentifier, agentLifeCycleState);
         agentLifeCycleService.insert(agentLifeCycleBo);
+        agentListStatusService.update(ServiceUid.DEFAULT_SERVICE_UID_CODE, applicationName, agentProperty.getServiceType(), agentId, startTimestamp,
+                agentLifeCycleState, eventTimestamp);
 
         updateAgentState(agentProperty.getServiceType(), eventTimestamp, applicationName, agentId);
     }

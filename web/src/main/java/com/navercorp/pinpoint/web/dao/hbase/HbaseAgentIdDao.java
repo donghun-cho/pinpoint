@@ -10,16 +10,19 @@ import com.navercorp.pinpoint.common.server.util.AgentIdRowKeyUtils;
 import com.navercorp.pinpoint.common.util.StringUtils;
 import com.navercorp.pinpoint.web.component.ApplicationFactory;
 import com.navercorp.pinpoint.web.dao.AgentIdDao;
-import com.navercorp.pinpoint.web.mapper.AgentStartTimeInfoMapper;
+import com.navercorp.pinpoint.web.mapper.AgentIdEntryMapper;
 import com.navercorp.pinpoint.web.util.ListListUtils;
 import com.navercorp.pinpoint.web.vo.agent.AgentIdEntry;
+import org.apache.hadoop.hbase.CompareOperator;
 import org.apache.hadoop.hbase.TableName;
 import org.apache.hadoop.hbase.client.Delete;
 import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.client.Scan;
+import org.apache.hadoop.hbase.filter.BinaryPrefixComparator;
+import org.apache.hadoop.hbase.filter.SingleColumnValueFilter;
+import org.apache.hadoop.hbase.util.Bytes;
 import org.springframework.stereotype.Repository;
 
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -61,7 +64,7 @@ public class HbaseAgentIdDao implements AgentIdDao {
     private List<AgentIdEntry> getAgentIdEntry(byte[] rowKeyPrefix, String applicationName) {
         Scan scan = createScan(rowKeyPrefix);
         final TableName applicationIndexTableName = tableNameProvider.getTableName(DESCRIPTOR.getTable());
-        RowMapper<List<AgentIdEntry>> agentStartTimeInfoMapper = new AgentStartTimeInfoMapper(applicationFactory, AgentIdRowKeyUtils.createApplicationNamePredicate(applicationName));
+        RowMapper<List<AgentIdEntry>> agentStartTimeInfoMapper = new AgentIdEntryMapper(applicationFactory, AgentIdRowKeyUtils.createApplicationNamePredicate(applicationName));
         List<List<AgentIdEntry>> results = hbaseTemplate.find(applicationIndexTableName, scan, agentStartTimeInfoMapper);
         return ListListUtils.toList(results);
     }
@@ -75,18 +78,16 @@ public class HbaseAgentIdDao implements AgentIdDao {
     }
 
     @Override
-    public List<AgentIdEntry> getAgentIdEntryByInsertTimeAfter(int serviceUid, String applicationName, int serviceTypeCode, long minUpdateTime) {
+    public List<AgentIdEntry> getAgentIdEntryByMinStatusTimestamp(int serviceUid, String applicationName, int serviceTypeCode, long minStatusTimestamp) {
         byte[] rowKeyPrefix = AgentIdRowKeyUtils.createPrefix(serviceUid, applicationName, serviceTypeCode);
         Scan scan = createScan(rowKeyPrefix);
-        // TODO: create update time column and use it instead of insert time
-        try {
-            scan.setTimeRange(minUpdateTime, Long.MAX_VALUE);
-        } catch (IOException exception) {
-            throw new IllegalArgumentException(exception);
-        }
+
+        SingleColumnValueFilter filter = new SingleColumnValueFilter(DESCRIPTOR.getName(), HbaseTables.AGENT_ID_STATUS_QUALIFIER, CompareOperator.GREATER_OR_EQUAL, new BinaryPrefixComparator(Bytes.toBytes(minStatusTimestamp)));
+        filter.setFilterIfMissing(false);
+        scan.setFilter(filter);
 
         final TableName applicationIndexTableName = tableNameProvider.getTableName(DESCRIPTOR.getTable());
-        RowMapper<List<AgentIdEntry>> agentStartTimeInfoMapper = new AgentStartTimeInfoMapper(applicationFactory, AgentIdRowKeyUtils.createApplicationNamePredicate(applicationName));
+        RowMapper<List<AgentIdEntry>> agentStartTimeInfoMapper = new AgentIdEntryMapper(applicationFactory, AgentIdRowKeyUtils.createApplicationNamePredicate(applicationName));
         List<List<AgentIdEntry>> results = hbaseTemplate.find(applicationIndexTableName, scan, agentStartTimeInfoMapper);
         return ListListUtils.toList(results);
     }

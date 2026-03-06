@@ -16,8 +16,7 @@
 
 package com.navercorp.pinpoint.web.vo.agent;
 
-import com.fasterxml.jackson.annotation.JsonIgnore;
-import com.navercorp.pinpoint.common.util.StringUtils;
+import com.navercorp.pinpoint.common.server.util.AgentLifeCycleState;
 import com.navercorp.pinpoint.web.vo.Application;
 import com.navercorp.pinpoint.web.vo.Service;
 import org.jspecify.annotations.Nullable;
@@ -29,20 +28,22 @@ public class AgentIdEntry {
     private final Application application;
     private final String agentId;
     private final long agentStartTime;
-
+    @Nullable
     private final String agentName;
-    private final long lastUpdated;
 
-    public AgentIdEntry(Application application, String agentId, long agentStartTime,
-                        long lastUpdated, @Nullable String agentName) {
+    private final AgentLifeCycleState lastStatus;
+    private final long lastStatusTimestamp;
+
+    public AgentIdEntry(Application application, String agentId, long agentStartTime, @Nullable String agentName,
+                        AgentLifeCycleState lastStatus, long lastStatusTimestamp) {
         this.application = Objects.requireNonNull(application, "application");
         this.agentId = Objects.requireNonNull(agentId, "agentId");
         this.agentStartTime = agentStartTime;
-        this.lastUpdated = lastUpdated;
-        this.agentName = StringUtils.hasText(agentName) ? agentName : agentId;
+        this.agentName = agentName;
+        this.lastStatus = Objects.requireNonNull(lastStatus, "agentState");
+        this.lastStatusTimestamp = lastStatusTimestamp;
     }
 
-    @JsonIgnore
     public Application getApplication() {
         return application;
     }
@@ -75,8 +76,11 @@ public class AgentIdEntry {
         return agentName;
     }
 
-    @JsonIgnore
-    public long getLastUpdated() {
-        return lastUpdated;
+    public AgentLifeCycleState getLastStatus() {
+        return lastStatus;
+    }
+
+    public long getLastStatusTimestamp() {
+        return lastStatusTimestamp;
     }
 }
