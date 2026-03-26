@@ -16,11 +16,11 @@
 
 package com.navercorp.pinpoint.web.service;
 
+import com.navercorp.pinpoint.common.server.config.AgentProperties;
 import com.navercorp.pinpoint.common.server.uid.ServiceUid;
 import com.navercorp.pinpoint.common.timeseries.time.Range;
 import com.navercorp.pinpoint.common.trace.ServiceType;
 import com.navercorp.pinpoint.web.applicationmap.dao.MapAgentResponseDao;
-import com.navercorp.pinpoint.web.config.AgentListProperties;
 import com.navercorp.pinpoint.web.dao.AgentIdDao;
 import com.navercorp.pinpoint.web.vo.Application;
 import com.navercorp.pinpoint.web.vo.agent.AgentIdEntry;
@@ -48,7 +48,7 @@ import static org.mockito.Mockito.when;
 public class AgentListV2ServiceImplTest {
 
     @Mock
-    AgentListProperties agentListProperties;
+    AgentProperties agentProperties;
 
     @Mock
     private AgentIdDao agentIdDao;
@@ -60,13 +60,13 @@ public class AgentListV2ServiceImplTest {
 
     @BeforeEach
     public void setup() {
-        when(agentListProperties.getFilterStatisticsExistenceServiceTypeCodes()).thenReturn(Set.of());
-        when(agentListProperties.getFilterLastStatusExcludeServiceTypeCodes()).thenReturn(Set.of());
-        agentListV2Service = new AgentListV2ServiceImpl(agentListProperties, agentIdDao, mapAgentResponseDao);
+        when(agentProperties.getStatisticsCheckServiceTypeCodes()).thenReturn(Set.of());
+        when(agentProperties.getMissingHeaderServiceTypeCodes()).thenReturn(Set.of());
+        agentListV2Service = new AgentListV2ServiceImpl(agentProperties, agentIdDao, mapAgentResponseDao);
     }
 
     @Test
-    public void filterStatusExcludeTest() {
+    public void filterStateTimeTest() {
         long currentTime = System.currentTimeMillis();
         long from = currentTime - Duration.ofMinutes(25).toMillis(); // 25 minutes ago
         long to = currentTime - Duration.ofMinutes(5).toMillis(); // 5 minutes ago
@@ -76,15 +76,14 @@ public class AgentListV2ServiceImplTest {
         String agentId = "testAgent";
         String agentId2 = "otherAgent";
         long agentStartTime = currentTime - Duration.ofHours(1).toMillis();
-        when(agentListProperties.getFilterLastStatusExcludeServiceTypeCodes()).thenReturn(Set.of((int) ServiceType.JAVA.getCode()));
-        when(agentIdDao.getAgentIdEntry(anyInt(), any(), anyInt())).thenReturn(List.of(
+        when(agentIdDao.getAgentIdEntryByMinStateTimestamp(anyInt(), any(), anyInt(), anyLong())).thenReturn(List.of(
                 new AgentIdEntry(testApplication, agentId, agentStartTime, null, RUNNING, currentTime),
-                new AgentIdEntry(testApplication, agentId2, agentStartTime, null, RUNNING, agentStartTime)
+                new AgentIdEntry(testApplication, agentId2, agentStartTime, null, RUNNING, currentTime)
         ));
 
         List<AgentIdEntry> agentList = agentListV2Service.getAgentList(ServiceUid.DEFAULT, testApplication.getApplicationName(), testApplication.getServiceType(), range);
 
-        verify(agentIdDao, times(1)).getAgentIdEntry(anyInt(), any(), anyInt());
+        verify(agentIdDao, times(1)).getAgentIdEntryByMinStateTimestamp(anyInt(), any(), anyInt(), anyLong());
         Assertions.assertThat(agentList).hasSize(2);
     }
 
@@ -100,7 +99,7 @@ public class AgentListV2ServiceImplTest {
         String agentId2 = "toBeFiltered";
         long agentStartTime = currentTime - Duration.ofHours(1).toMillis();
         long newAgentStartTime = to + Duration.ofMinutes(5).toMillis(); // starts after the 'to' time
-        when(agentIdDao.getAgentIdEntryByMinStatusTimestamp(anyInt(), any(), anyInt(), anyLong())).thenReturn(List.of(
+        when(agentIdDao.getAgentIdEntryByMinStateTimestamp(anyInt(), any(), anyInt(), anyLong())).thenReturn(List.of(
                 new AgentIdEntry(testApplication, agentId, agentStartTime, null, RUNNING, currentTime),
                 new AgentIdEntry(testApplication, agentId2, newAgentStartTime, null, RUNNING, currentTime)
         ));
@@ -122,7 +121,7 @@ public class AgentListV2ServiceImplTest {
         String agentId = "testAgent";
         long agentStartTime = currentTime - Duration.ofHours(1).toMillis();
         long previousAgentStartTime = currentTime - Duration.ofHours(4).toMillis(); // 4 hours ago
-        when(agentIdDao.getAgentIdEntryByMinStatusTimestamp(anyInt(), any(), anyInt(), anyLong())).thenReturn(List.of(
+        when(agentIdDao.getAgentIdEntryByMinStateTimestamp(anyInt(), any(), anyInt(), anyLong())).thenReturn(List.of(
                 new AgentIdEntry(testApplication, agentId, agentStartTime, null, RUNNING, currentTime),
                 new AgentIdEntry(testApplication, agentId, previousAgentStartTime, null, RUNNING, currentTime)
         ));
@@ -145,8 +144,8 @@ public class AgentListV2ServiceImplTest {
         String agentId2 = "toBeFiltered";
         long agentStartTime = currentTime - Duration.ofHours(1).toMillis();
         when(mapAgentResponseDao.selectAgentIds(any(), any())).thenReturn(Set.of(agentId)); // only agentId has statistics
-        when(agentListProperties.getFilterStatisticsExistenceServiceTypeCodes()).thenReturn(Set.of(testApplication.getServiceTypeCode())); // enable statistics existence filtering for the service type
-        when(agentIdDao.getAgentIdEntryByMinStatusTimestamp(anyInt(), any(), anyInt(), anyLong())).thenReturn(List.of(
+        when(agentProperties.getStatisticsCheckServiceTypeCodes()).thenReturn(Set.of(testApplication.getServiceTypeCode())); // enable statistics existence filtering for the service type
+        when(agentIdDao.getAgentIdEntry(anyInt(), any(), anyInt())).thenReturn(List.of(
                 new AgentIdEntry(testApplication, agentId, agentStartTime, null, RUNNING, agentStartTime),
                 new AgentIdEntry(testApplication, agentId2, agentStartTime, null, UNKNOWN, 0)
         ));

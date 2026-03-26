@@ -16,7 +16,6 @@
 
 package com.navercorp.pinpoint.batch.job;
 
-import com.navercorp.pinpoint.batch.util.JobParametersUtils;
 import com.navercorp.pinpoint.common.timeseries.time.Range;
 import com.navercorp.pinpoint.common.timeseries.window.TimeWindow;
 import com.navercorp.pinpoint.web.applicationmap.dao.MapAgentResponseDao;
@@ -33,15 +32,16 @@ import org.springframework.batch.core.step.tasklet.Tasklet;
 import org.springframework.batch.repeat.RepeatStatus;
 
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Date;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 public class ApplicationCleanupTasklet implements Tasklet {
     private static final int DELETE_BATCH_SIZE = 2000;
+    private static final int UNDEFINED_SERVICE_TYPE_CODE = -1;
 
     private final Logger logger = LogManager.getLogger(this.getClass());
 
@@ -55,33 +55,41 @@ public class ApplicationCleanupTasklet implements Tasklet {
     private final int agentCountThreshold;
     private final int inactiveDays;
     private final int inactiveGraceDays;
+    private final long baseTimestamp;
+    private final long cleanupWindowMillis;
     private final Set<Integer> statisticsCheckServiceTypeCodes;
+    private final Set<Integer> missingHeaderServiceTypeCodes;
 
     public ApplicationCleanupTasklet(
             ApplicationDao applicationDao,
             AgentIdDao agentIdDao,
             MapAgentResponseDao mapAgentResponseDao,
             Boolean dryRun,
+            long baseTimestamp,
             List<Integer> serviceUidList,
             int agentCountThreshold,
             int inactiveDays,
             int inactiveGraceDays,
-            Set<Integer> statisticsCheckServiceTypeCodes
+            Set<Integer> missingHeaderServiceTypeCodes,
+            Set<Integer> statisticsCheckServiceTypeCodes,
+            long cleanupWindowMillis
     ) {
         this.applicationDao = Objects.requireNonNull(applicationDao, "applicationDao");
         this.agentIdDao = Objects.requireNonNull(agentIdDao, "agentIdDao");
         this.mapAgentResponseDao = Objects.requireNonNull(mapAgentResponseDao, "mapAgentResponseDao");
         this.dryRun = Objects.requireNonNullElse(dryRun, Boolean.TRUE);
+        this.baseTimestamp = baseTimestamp;
         this.serviceUidList = Objects.requireNonNull(serviceUidList, "serviceUidList");
         this.agentCountThreshold = agentCountThreshold;
         this.inactiveDays = inactiveDays;
         this.inactiveGraceDays = inactiveGraceDays;
+        this.missingHeaderServiceTypeCodes = Objects.requireNonNull(missingHeaderServiceTypeCodes, "missingHeaderServiceTypeCodes");
         this.statisticsCheckServiceTypeCodes = Objects.requireNonNull(statisticsCheckServiceTypeCodes, "statisticsCheckServiceTypeCodes");
+        this.cleanupWindowMillis = cleanupWindowMillis;
     }
 
     @Override
     public RepeatStatus execute(@NonNull StepContribution contribution, @NonNull ChunkContext chunkContext) {
-        long baseTimestamp = getBaseTimestamp(chunkContext);
         for (int serviceUid : serviceUidList) {
             List<Application> applications = applicationDao.getApplications(serviceUid);
             logger.info("processing service={}, applicationCount={}", serviceUid, applications.size());
@@ -93,11 +101,11 @@ public class ApplicationCleanupTasklet implements Tasklet {
     }
 
     private void processApplication(Application application, long baseTimestamp) {
-        List<AgentIdEntry> agentIdEntries = agentIdDao.getAgentIdEntry(
-                application.getService().getUid(),
-                application.getApplicationName(),
-                application.getServiceTypeCode()
-        );
+        int serviceUid = application.getService().getUid();
+        String applicationName = application.getApplicationName();
+        int serviceTypeCode = application.getServiceTypeCode();
+
+        List<AgentIdEntry> agentIdEntries = queryAgentIdEntries(serviceUid, applicationName, serviceTypeCode);
 
         if (agentIdEntries.isEmpty()) {
             deleteApplication(application, baseTimestamp);
@@ -105,7 +113,7 @@ public class ApplicationCleanupTasklet implements Tasklet {
         }
 
         if (agentIdEntries.size() > agentCountThreshold) {
-            if (statisticsCheckServiceTypeCodes.contains(application.getServiceTypeCode())) {
+            if (statisticsCheckServiceTypeCodes.contains(serviceTypeCode)) {
                 List<AgentIdEntry> deleteTargets = getDeleteTargetsUsingStatisticsCheck(application, baseTimestamp, agentIdEntries);
                 deleteAgentEntries(application, deleteTargets);
             } else {
@@ -113,6 +121,18 @@ public class ApplicationCleanupTasklet implements Tasklet {
                 deleteAgentEntries(application, deleteTargets);
             }
         }
+    }
+
+    private List<AgentIdEntry> queryAgentIdEntries(int serviceUid, String applicationName, int serviceTypeCode) {
+        List<AgentIdEntry> entries = agentIdDao.getAgentIdEntry(serviceUid, applicationName, serviceTypeCode);
+        if (!missingHeaderServiceTypeCodes.contains(serviceTypeCode)) {
+            return entries;
+        }
+        List<AgentIdEntry> undefinedEntries = agentIdDao.getAgentIdEntry(serviceUid, applicationName, UNDEFINED_SERVICE_TYPE_CODE);
+        List<AgentIdEntry> combined = new ArrayList<>(entries.size() + undefinedEntries.size());
+        combined.addAll(entries);
+        combined.addAll(undefinedEntries);
+        return combined;
     }
 
     private List<AgentIdEntry> getDeleteTargetsUsingStatisticsCheck(Application application, long baseTimestamp, List<AgentIdEntry> agentIdEntries) {
@@ -124,11 +144,22 @@ public class ApplicationCleanupTasklet implements Tasklet {
         TimeWindow activeTimeWindow = new TimeWindow(Range.between(newThresholdTimestamp, baseTimestamp));
 
         Set<String> agentIdsFromStatistics = mapAgentResponseDao.selectAgentIds(application, activeTimeWindow);
-        List<AgentIdEntry> deleteTargets = agentIdEntries.stream()
-                .filter(entry -> entry.getAgentStartTime() < newThresholdTimestamp)
-                .filter(entry -> entry.getCurrentStateTimestamp() > 0 && entry.getCurrentStateTimestamp() < newThresholdTimestamp)
-                .filter(entry -> !agentIdsFromStatistics.contains(entry.getAgentId()))
-                .collect(Collectors.toList());
+        // Keep the first (most recent) entry per agentId found in statistics
+        String lastKeptAgentId = null;
+        List<AgentIdEntry> deleteTargets = new ArrayList<>();
+        for (AgentIdEntry entry : agentIdEntries) {
+            if (entry.getAgentStartTime() >= newThresholdTimestamp) {
+                continue;
+            }
+            if (entry.getCurrentStateTimestamp() <= 0 || entry.getCurrentStateTimestamp() >= newThresholdTimestamp) {
+                continue;
+            }
+            if (agentIdsFromStatistics.contains(entry.getAgentId()) && !entry.getAgentId().equals(lastKeptAgentId)) {
+                lastKeptAgentId = entry.getAgentId();
+                continue;
+            }
+            deleteTargets.add(entry);
+        }
         logger.info("Cleaning up excessive agents. application={}, agentCount={}, targetCount={}, newCleanDurationDays={}", application, agentIdEntries.size(), deleteTargets.size(), newCleanDurationDays);
         return deleteTargets;
     }
@@ -160,21 +191,21 @@ public class ApplicationCleanupTasklet implements Tasklet {
         if (agentCount <= agentCountThreshold) {
             return inactiveDays;
         }
-        int calculatedDays = (int) (inactiveDays * (agentCountThreshold / (double) agentCount));
+        double cleanDuration = cleanupWindowMillis * (agentCountThreshold / (double) agentCount);
+        int calculatedDays = (int) (cleanDuration / 86400000L);
         return Math.max(inactiveGraceDays, calculatedDays);
     }
 
     private void deleteAgentEntries(Application application, List<AgentIdEntry> deleteTargets) {
+        if (deleteTargets.isEmpty()) {
+            return;
+        }
         if (dryRun) {
             logger.info("dryRun=true, skip delete agentIds. application={}, deleteAgentCount={}",
                     application, deleteTargets.size());
             return;
         }
         logger.info("delete agentIds. application={}, deleteAgentCount={}", application, deleteTargets.size());
-
-        if (deleteTargets.isEmpty()) {
-            return;
-        }
         for (int i = 0; i < deleteTargets.size(); i += DELETE_BATCH_SIZE) {
             int end = Math.min(i + DELETE_BATCH_SIZE, deleteTargets.size());
             List<AgentIdEntry> deleteTargetSublist = deleteTargets.subList(i, end);
@@ -196,13 +227,5 @@ public class ApplicationCleanupTasklet implements Tasklet {
         );
     }
 
-    private long getBaseTimestamp(@NonNull ChunkContext chunkContext) {
-        Date scheduleDate = JobParametersUtils.getScheduleDate(chunkContext);
-        if (scheduleDate == null) {
-            return System.currentTimeMillis();
-        } else {
-            return scheduleDate.getTime();
-        }
-    }
 }
 
